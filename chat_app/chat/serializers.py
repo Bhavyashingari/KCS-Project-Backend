@@ -7,10 +7,44 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 User=get_user_model()
 
 class RoomSerializer(serializers.ModelSerializer):
+    admin_user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
+
     class Meta:
         model = Room
-        fields = '__all__'
+        fields = ['room_id', 'room_name', 'admin_user', 'is_broadcast', 'created_at', 'updated_at']
 
+    def create(self, validated_data):
+        # Generate a unique room ID (you can customize this)
+        validated_data['room_id'] = f"ROOM_{Room.objects.count() + 1}"
+        return super().create(validated_data)
+
+
+class AddUserToRoomSerializer(serializers.Serializer):
+    room_id = serializers.CharField()
+    username = serializers.CharField()
+
+    def validate(self, data):
+        # Check if the room exists
+        try:
+            data['room'] = Room.objects.get(room_id=data['room_id'])
+        except Room.DoesNotExist:
+            raise serializers.ValidationError("Room not found.")
+
+        # Check if the user exists
+        try:
+            data['user'] = User.objects.get(username=data['username'])
+        except User.DoesNotExist:
+            raise serializers.ValidationError("User not found.")
+
+        return data
+
+    def save(self, **kwargs):
+        room = self.validated_data['room']
+        user = self.validated_data['user']
+
+        # Add the user to the room
+        room.users.add(user)
+        return room
 
 class MessageSerializer(serializers.ModelSerializer):
     class Meta:
@@ -23,8 +57,9 @@ class SignupSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'first_name', 'last_name', 'email', 'password', 'confirmPassword']
-    
+        fields = ['id', 'first_name', 'last_name', 'email', 'password', 'confirmPassword', 'created_date', 'updated_date']
+        read_only_fields = ['created_date', 'updated_date'] 
+
     def validate_email(self, value):
         """
         Custom validation to check if the email already exists.
@@ -45,16 +80,22 @@ class SignupSerializer(serializers.ModelSerializer):
         # Remove confirmPassword from validated_data as it's not required for creating the user
         validated_data.pop('confirmPassword')
 
-        # Create user
+        temp_username = f"TEMP_USER_{int(User.objects.latest('id').id) + 1}" if User.objects.exists() else "TEMP_USER_1"
+
+        # Create the user instance without setting the username
         user = User.objects.create_user(
-            username=validated_data['email'],  # Assuming email is used as username
+            username=temp_username,
             email=validated_data['email'],
             first_name=validated_data['first_name'],
             last_name=validated_data['last_name'],
             password=validated_data['password']  # Password will be hashed automatically
         )
-        return user
 
+        # Set the username dynamically based on the user ID
+        user.username = f"KCS_USER_{user.id}"
+        user.save()
+
+        return user
     
 class UserSerializer(serializers.ModelSerializer):
     class Meta:

@@ -1,11 +1,18 @@
 from django.db import models
-from django.contrib.auth.models import AbstractUser, UserManager
+from django.contrib.auth.models import AbstractUser, UserManager, User
+from django.conf import settings  # Import settings to refer to AUTH_USER_MODEL
 
 class Room(models.Model):
-    name = models.CharField(max_length=255)
+    room_id = models.CharField(max_length=50, unique=True)
+    room_name = models.CharField(max_length=255, unique=True)
+    admin_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="admin_rooms")
+    is_broadcast = models.BooleanField(default=False)
+    users = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name="joined_rooms")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return self.name
+        return self.room_name
 
 class Message(models.Model):
     room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='messages')
@@ -32,7 +39,9 @@ class UserManager(UserManager):
 
 class User(AbstractUser):
     email = models.EmailField(unique=True)
-    
+    created_date = models.DateTimeField(auto_now_add=True)  # Automatically set when a user is created
+    updated_date = models.DateTimeField(auto_now=True)  # Automatically updated when a user is modified
+
     REQUIRED_FIELDS = ['first_name', 'last_name']
     USERNAME_FIELD = 'email' 
     objects = UserManager()
