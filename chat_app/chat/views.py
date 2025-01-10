@@ -3,7 +3,7 @@ from rest_framework.generics import CreateAPIView
 from django.shortcuts import render
 from rest_framework.generics import ListCreateAPIView, ListAPIView
 from .models import Room, Message
-from .serializers import AddUserToRoomSerializer, RoomSerializer, MessageSerializer, SignupSerializer, UserSerializer, CustomTokenObtainPairSerializer
+from .serializers import AddUserToRoomSerializer, RoomNameSerializer, RoomSerializer, MessageSerializer, SignupSerializer, UserSerializer, CustomTokenObtainPairSerializer
 from django.contrib.auth.hashers import check_password
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.views import APIView
@@ -21,10 +21,32 @@ from datetime import datetime, timedelta
 User = get_user_model()
 
 class RoomCreateView(CreateAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
     serializer_class = RoomSerializer
 
+class UserRoomListView(APIView):
+    def get(self, request):
+        # Get user_id from query parameters
+        user_id = request.query_params.get('user_id')  # Adjust as per your frontend data
 
+        if not user_id:
+            return Response({"error": "User ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Find all rooms where the user is associated using the Many-to-Many relationship
+            rooms = Room.objects.filter(users__id=user_id)  # This uses the `users` Many-to-Many field
+
+            # If no rooms found
+            if not rooms:
+                return Response({"message": "No rooms found for this user."}, status=status.HTTP_404_NOT_FOUND)
+
+            # Serialize the room names
+            serializer = RoomNameSerializer(rooms, many=True)
+            
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class AddUserToRoomView(APIView):
     permission_classes = [IsAuthenticated]
@@ -65,14 +87,6 @@ class SignupView(APIView):
             except IntegrityError:
                 return Response({"error": "Email already exists!"}, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-from rest_framework.views import APIView
-from rest_framework.permissions import AllowAny
-from rest_framework.response import Response
-from rest_framework import status
-from django.contrib.auth.hashers import check_password
-from datetime import datetime, timedelta
-import jwt  # Install PyJWT using pip install PyJWT
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
@@ -132,7 +146,7 @@ class LoginView(APIView):
 
 
 class UserListView(APIView):
-    permission_classes = [IsAuthenticated]
+    # permission_classes = [IsAuthenticated]
     def get(self, request):
         users = get_user_model().objects.all()
         serializer = UserSerializer(users, many=True)

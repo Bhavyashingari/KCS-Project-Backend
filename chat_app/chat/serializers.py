@@ -7,17 +7,48 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 User=get_user_model()
 
 class RoomSerializer(serializers.ModelSerializer):
-    admin_user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
+    admin_user = serializers.CharField()  # Accept username as a string
+    room_id = serializers.ReadOnlyField()
 
     class Meta:
         model = Room
         fields = ['room_id', 'room_name', 'admin_user', 'is_broadcast', 'created_at', 'updated_at']
 
-    def create(self, validated_data):
-        # Generate a unique room ID (you can customize this)
-        validated_data['room_id'] = f"ROOM_{Room.objects.count() + 1}"
-        return super().create(validated_data)
+    def validate_admin_user(self, value):
+        # Fetch the user by the username
+        try:
+            # Ensure we fetch the user by the username, not the email
+            user = User.objects.get(username=value)  # Fetch user by username
+        except User.DoesNotExist:
+            raise serializers.ValidationError("User with the given username does not exist.")
+        
+        return user  # Return the user instance instead of the username
 
+    def create(self, validated_data):
+        # Extract admin_user from validated_data
+        admin_user = validated_data.pop('admin_user')
+
+        # Generate a unique room ID
+        validated_data['room_id'] = f"ROOM_{Room.objects.count() + 1}"
+        validated_data['admin_user']=admin_user
+        # Create the room (without admin_user)
+        room = super().create(validated_data)
+
+        # Assign the admin_user to the room (ensuring it's the correct user instance)
+        # room.admin_user = admin_user  # Set the admin_user field explicitly
+        
+        # Automatically add admin_user as a member of the room
+        room.users.add(admin_user)  # Assuming 'members' is a ManyToManyField on the Room model
+        room.save()
+
+        return room
+
+class RoomNameSerializer(serializers.ModelSerializer):
+    room_name = serializers.CharField()
+
+    class Meta:
+        model = Room
+        fields = ['room_name', 'room_id' ,'created_at', "admin_user"]
 
 class AddUserToRoomSerializer(serializers.Serializer):
     room_id = serializers.CharField()
