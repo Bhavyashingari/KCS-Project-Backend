@@ -22,6 +22,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = 'django-insecure-$rxn&ivwg5o=%eisno0tg#3_tkej+ws3-p8l0^^bd_tjvs4qf='
 
+AZURE_AD_CLIENT_ID = 'your-client-id'
+AZURE_AD_TENANT_ID = 'your-tenant-id'  
+AZURE_AD_CLIENT_SECRET = 'your-client-secret'  
+
+
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
@@ -78,6 +84,10 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+MIDDLEWARE.insert(0, 'corsheaders.middleware.CorsMiddleware')
+MIDDLEWARE.insert(1, 'chat_app.middleware.AzureADTokenValidationMiddleware')
+
 
 ROOT_URLCONF = 'chat_app.urls'
 
