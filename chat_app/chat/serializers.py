@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-User=get_user_model()
+User = get_user_model()
 
 class RoomSerializer(serializers.ModelSerializer):
     admin_user = serializers.CharField()  # Accept username as a string
@@ -17,7 +17,6 @@ class RoomSerializer(serializers.ModelSerializer):
     def validate_admin_user(self, value):
         # Fetch the user by the username
         try:
-            # Ensure we fetch the user by the username, not the email
             user = User.objects.get(username=value)  # Fetch user by username
         except User.DoesNotExist:
             raise serializers.ValidationError("User with the given username does not exist.")
@@ -30,15 +29,13 @@ class RoomSerializer(serializers.ModelSerializer):
 
         # Generate a unique room ID
         validated_data['room_id'] = f"ROOM_{Room.objects.count() + 1}"
-        validated_data['admin_user']=admin_user
-        # Create the room (without admin_user)
+        validated_data['admin_user'] = admin_user
+
+        # Create the room
         room = super().create(validated_data)
 
-        # Assign the admin_user to the room (ensuring it's the correct user instance)
-        # room.admin_user = admin_user  # Set the admin_user field explicitly
-        
         # Automatically add admin_user as a member of the room
-        room.users.add(admin_user)  # Assuming 'members' is a ManyToManyField on the Room model
+        room.users.add(admin_user)  # Assuming 'users' is a ManyToManyField on the Room model
         room.save()
 
         return room
@@ -48,7 +45,7 @@ class RoomNameSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Room
-        fields = ['room_name', 'room_id' ,'created_at', "admin_user"]
+        fields = ['room_name', 'room_id', 'created_at', "admin_user"]
 
 class AddUserToRoomSerializer(serializers.Serializer):
     room_id = serializers.CharField()
@@ -110,7 +107,7 @@ class SignupSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'first_name', 'last_name', 'email', 'password', 'confirmPassword', 'created_date', 'updated_date']
-        read_only_fields = ['created_date', 'updated_date'] 
+        read_only_fields = ['created_date', 'updated_date']
 
     def validate_email(self, value):
         """
@@ -148,12 +145,11 @@ class SignupSerializer(serializers.ModelSerializer):
         user.save()
 
         return user
-    
+
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = get_user_model()
         fields = ['id', 'first_name', 'last_name', 'email']
-
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
@@ -166,5 +162,3 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         token['last_name'] = user.last_name
 
         return token
-    
-

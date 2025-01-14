@@ -9,9 +9,12 @@ https://docs.djangoproject.com/en/5.1/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
-
+import os
+from dotenv import load_dotenv
 from pathlib import Path
 
+
+load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -22,8 +25,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = 'django-insecure-$rxn&ivwg5o=%eisno0tg#3_tkej+ws3-p8l0^^bd_tjvs4qf='
 
+AZURE_AD_CLIENT_ID = os.getenv('AZURE_AD_CLIENT_ID')
+AZURE_AD_TENANT_ID = os.getenv('AZURE_AD_TENANT_ID')
+AZURE_AD_CLIENT_SECRET = os.getenv('AZURE_AD_CLIENT_SECRET')
+DEBUG = os.getenv('DEBUG') == 'True'
+
+
+
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
 ALLOWED_HOSTS = []
 
@@ -78,6 +88,12 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+MIDDLEWARE.insert(0, 'corsheaders.middleware.CorsMiddleware')
+MIDDLEWARE.insert(1, 'chat_app.middleware.AzureADTokenValidationMiddleware')
+MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
+
+
 
 ROOT_URLCONF = 'chat_app.urls'
 
