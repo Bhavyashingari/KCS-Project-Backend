@@ -3,7 +3,7 @@ from rest_framework.generics import CreateAPIView
 from django.shortcuts import render
 from rest_framework.generics import ListCreateAPIView, ListAPIView
 from .models import Room, Message
-from .serializers import AddUserToRoomSerializer, RoomNameSerializer, RoomSerializer, MessageSerializer, SignupSerializer, UserSerializer, CustomTokenObtainPairSerializer
+from .serializers import AddMessageSerializer, AddUserToRoomSerializer, RoomNameSerializer, RoomSerializer, SignupSerializer, UserSerializer, MessageSerializer
 from django.contrib.auth.hashers import check_password
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.views import APIView
@@ -62,12 +62,15 @@ class AddUserToRoomView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class MessageListView(ListAPIView):
+    """
+    View to fetch messages for a specific room by room_id in descending order.
+    """
     permission_classes = [IsAuthenticated]
     serializer_class = MessageSerializer
 
     def get_queryset(self):
-        room_name = self.kwargs['room_name']
-        return Message.objects.filter(room__name=room_name).order_by('timestamp')
+        room_id = self.kwargs['room_id']  # Get room_id from the URL
+        return Message.objects.filter(room__id=room_id).order_by('-timestamp')  # Descending order
 
 class SignupView(APIView):
     permission_classes = [AllowAny]
@@ -151,3 +154,23 @@ class UserListView(APIView):
         users = get_user_model().objects.all()
         serializer = UserSerializer(users, many=True)
         return Response(serializer.data)
+
+
+class AddMessageToRoomView(APIView):
+    # permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        serializer = AddMessageSerializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                message = serializer.save()
+                return Response({
+                    "message": "Message added successfully.",
+                    "message_id": message.message_id,
+                    "room_id": message.room.id,
+                    "content": message.content,
+                    "timestamp": message.timestamp
+                }, status=status.HTTP_201_CREATED)
+            except Exception as e:
+                return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

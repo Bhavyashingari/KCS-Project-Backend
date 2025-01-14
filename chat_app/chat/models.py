@@ -16,11 +16,23 @@ class Room(models.Model):
 
 class Message(models.Model):
     room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='messages')
+    message_id = models.CharField(max_length=75, unique=True, blank=True, db_index=True)
     content = models.TextField()
     timestamp = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f'Message in {self.room.name} at {self.timestamp}'
+
+    def save(self, *args, **kwargs):
+        # Generate message_id if not already set
+        if not self.message_id:
+            last_message = Message.objects.order_by('-id').first()
+            if last_message:
+                last_id = int(last_message.message_id.split('_')[-1])
+                self.message_id = f'KCS_MESSAGE_{last_id + 1}'
+            else:
+                self.message_id = 'KCS_MESSAGE_1'
+        super().save(*args, **kwargs)
 
 class UserManager(UserManager):
     def create_superuser(self, email, first_name, last_name, password=None, **extra_fields):

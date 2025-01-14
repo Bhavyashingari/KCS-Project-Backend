@@ -77,10 +77,31 @@ class AddUserToRoomSerializer(serializers.Serializer):
         room.users.add(user)
         return room
 
+
 class MessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = Message
-        fields = '__all__'
+        fields = ['message_id', 'content', 'timestamp', 'room']  # Include fields as needed
+
+class AddMessageSerializer(serializers.ModelSerializer):
+    room_id = serializers.CharField(write_only=True)
+    user_id = serializers.CharField(write_only=True)
+
+    class Meta:
+        model = Message
+        fields = ['room_id', 'user_id', 'content']
+
+    def create(self, validated_data):
+        room_id = validated_data.pop('room_id')
+        user_id = validated_data.pop('user_id')
+
+        # Fetch room based on room_id
+        from .models import Room  # Avoiding circular imports
+        room = Room.objects.get(room_id=room_id)
+
+        # Save the message with the associated room
+        message = Message.objects.create(room=room, **validated_data)
+        return message
 
 class SignupSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
@@ -145,3 +166,5 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         token['last_name'] = user.last_name
 
         return token
+    
+
