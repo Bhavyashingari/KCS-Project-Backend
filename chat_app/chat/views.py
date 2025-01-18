@@ -1,175 +1,161 @@
 from sqlite3 import IntegrityError
+from rest_framework.generics import CreateAPIView
 from django.shortcuts import render
 from rest_framework.generics import ListCreateAPIView, ListAPIView
+from .models import DeletedUser, Room, Message
 from .serializers import AddMessageSerializer, AddUserToRoomSerializer, RoomNameSerializer, RoomSerializer, SignupSerializer, UserSerializer, MessageSerializer
-from rest_framework.generics import CreateAPIView, ListAPIView
 from django.contrib.auth.hashers import check_password
-from django.contrib.auth import get_user_model
+from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from django.contrib.auth import authenticate, get_user_model
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from .models import Room, Message
-from rest_framework_simplejwt.tokens import RefreshToken
-from msal import ConfidentialClientApplication
+from rest_framework.permissions import AllowAny
+from rest_framework.authtoken.models import Token
+from django.http import JsonResponse
+from rest_framework_simplejwt.views import TokenObtainPairView
 import jwt
 from datetime import datetime, timedelta
-from django.conf import settings
 
 User = get_user_model()
-
 
 class RoomCreateView(CreateAPIView):
     permission_classes = [AllowAny]
     serializer_class = RoomSerializer
 
-
 class UserRoomListView(APIView):
     def get(self, request):
-        user_id = request.query_params.get("user_id")
+        # Get user_id from query parameters
+        user_id = request.query_params.get('user_id')  # Adjust as per your frontend data
 
         if not user_id:
             return Response({"error": "User ID is required."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            rooms = Room.objects.filter(users__id=user_id)
+            # Find all rooms where the user is associated using the Many-to-Many relationship
+            rooms = Room.objects.filter(users__id=user_id)  # This uses the `users` Many-to-Many field
+
+            # If no rooms found
             if not rooms:
                 return Response({"message": "No rooms found for this user."}, status=status.HTTP_404_NOT_FOUND)
+
+            # Serialize the room names
             serializer = RoomNameSerializer(rooms, many=True)
+            
             return Response(serializer.data, status=status.HTTP_200_OK)
+
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
 class AddUserToRoomView(APIView):
-    permission_classes = [IsAuthenticated]
-
     def post(self, request, *args, **kwargs):
         serializer = AddUserToRoomSerializer(data=request.data)
         if serializer.is_valid():
             room = serializer.save()
             return Response(
-                {"message": f"User added to room {room.room_name} successfully."},
-                status=status.HTTP_200_OK,
+                {"message": f"Users added to room {room.room_name} successfully."},
+                status=status.HTTP_200_OK
             )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 class MessageListView(ListAPIView):
     """
     View to fetch messages for a specific room by room_id in descending order.
     """
-    permission_classes = [IsAuthenticated]
+    # permission_classes = [IsAuthenticated]
     serializer_class = MessageSerializer
 
     def get_queryset(self):
         room_id = self.kwargs['room_id']  # Get room_id from the URL
-        return Message.objects.filter(room__id=room_id).order_by('-timestamp')  # Descending order
+        try:
+            # Fetch the Room instance with the provided room_id (assuming room_id is unique)
+            room = Room.objects.get(room_id=room_id)
+            # Filter messages for the specific room
+            messages = Message.objects.filter(room=room).order_by('-timestamp')  # Descending order
+            print(messages)  # Debugging: log the messages
+            return messages
+        except Room.DoesNotExist:
+            raise serializers.ValidationError(f"Room with ID '{room_id}' does not exist.")
 
 class SignupView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        print("inside signup view")
         serializer = SignupSerializer(data=request.data)
+        print("serializer",serializer)
         if serializer.is_valid():
             try:
                 user = serializer.save()
-                return Response(
-                    {
-                        "message": "User created successfully!",
-                        "id": user.id,
-                        "email": user.email,
-                    },
-                    status=status.HTTP_201_CREATED,
-                )
+                return Response({
+                    "message": "User created successfully!",
+                    "id": user.id,
+                    "email": user.email
+                }, status=status.HTTP_201_CREATED)
             except IntegrityError:
                 return Response({"error": "Email already exists!"}, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        token = request.data.get("token")  # Azure AD token from frontend
+        email = request.data.get('email')
+        password = request.data.get('password')
 
-        if not token:
-            return Response({"error": "Token is required."}, status=status.HTTP_400_BAD_REQUEST)
+        # Get the User model
+        user = User.active_users.filter(email=email).first()
 
-        try:
-            decoded_token = self.validate_azure_token(token)
+        if user and check_password(password, user.password):
+            # Generate JWT tokens
+            access_token = self.create_jwt_token(user, 'access', timedelta(hours=1))  # Access token expires in 1 hour
+            refresh_token = self.create_jwt_token(user, 'refresh', timedelta(days=7))  # Refresh token expires in 7 days
 
-            if not decoded_token:
-                return Response({"error": "Invalid Azure AD token."}, status=status.HTTP_401_UNAUTHORIZED)
+            # Send both tokens in response body
+            return Response({
+                "message": "Login successful!",
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "user_id": user.id,
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "username": user.username
+            }, status=status.HTTP_200_OK)
 
-            email = decoded_token.get("email")
-            first_name = decoded_token.get("given_name")
-            last_name = decoded_token.get("family_name")
-
-            user, created = User.objects.get_or_create(
-                email=email,
-                defaults={
-                    "first_name": first_name,
-                    "last_name": last_name,
-                    "username": email.split("@")[0],
-                },
-            )
-
-            access_token = self.create_jwt_token(user, "access", timedelta(hours=1))
-            refresh_token = self.create_jwt_token(user, "refresh", timedelta(days=7))
-
-            return Response(
-                {
-                    "message": "Login successful!",
-                    "access_token": access_token,
-                    "refresh_token": refresh_token,
-                    "user_id": user.id,
-                    "email": user.email,
-                    "first_name": user.first_name,
-                    "last_name": user.last_name,
-                    "username": user.username,
-                },
-                status=status.HTTP_200_OK,
-            )
-
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    def validate_azure_token(self, token):
-        try:
-            client_app = ConfidentialClientApplication(
-                settings.AZURE_CLIENT_ID,
-                authority=f"https://login.microsoftonline.com/{settings.AZURE_TENANT_ID}",
-                client_credential=settings.AZURE_CLIENT_SECRET,
-            )
-
-            result = client_app.acquire_token_on_behalf_of(token, scopes=["User.Read"])
-            if "id_token_claims" in result:
-                return result["id_token_claims"]
-            return None
-        except Exception as e:
-            print(f"Azure token validation error: {e}")
-            return None
+        return Response({"error": "Invalid email or password"}, status=status.HTTP_401_UNAUTHORIZED)
 
     def create_jwt_token(self, user, token_type, expiration_time):
+        """
+        Generates a JWT token (either access or refresh token).
+        :param user: The user object to embed in the token.
+        :param token_type: Either 'access' or 'refresh' to distinguish token type.
+        :param expiration_time: Expiration time for the token (timedelta).
+        """
+        # Create the payload with user information
         payload = {
             "user_id": user.id,
             "email": user.email,
             "first_name": user.first_name,
             "last_name": user.last_name,
             "username": user.username,
-            "token_type": token_type,
-            "exp": datetime.utcnow() + expiration_time,
-            "iat": datetime.utcnow(),
+            "token_type": token_type,  # To distinguish between access and refresh token
+            "exp": datetime.utcnow() + expiration_time,  # Set expiration time
+            "iat": datetime.utcnow()  # Issued at
         }
-        secret_key = settings.SECRET_KEY
-        token = jwt.encode(payload, secret_key, algorithm="HS256")
+
+        # Secret key to sign the JWT (ensure to keep it secret and secure)
+        secret_key = 'your_secret_key'  # Replace with your actual secret key
+
+        # Create JWT token
+        token = jwt.encode(payload, secret_key, algorithm='HS256')
+
         return token
 
 
 class UserListView(APIView):
-    permission_classes = [IsAuthenticated]
-
+    # permission_classes = [IsAuthenticated]
     def get(self, request):
         users = get_user_model().objects.all()
         serializer = UserSerializer(users, many=True)
@@ -187,10 +173,102 @@ class AddMessageToRoomView(APIView):
                 return Response({
                     "message": "Message added successfully.",
                     "message_id": message.message_id,
-                    "room_id": message.room.id,
+                    "room_id": message.room.room_id,
                     "content": message.content,
                     "timestamp": message.timestamp
                 }, status=status.HTTP_201_CREATED)
             except Exception as e:
                 return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AccountView(APIView):
+    """
+    View to fetch and update user account details based on user_id.
+    """
+    # permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Fetch the account details of a user based on user_id.
+        """
+        user_id = request.query_params.get('user_id')
+        if not user_id:
+            return Response({"error": "User ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.active_users.get(id=user_id)
+            user_data = {
+                "user_id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+            }
+            return Response(user_data, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def put(self, request):
+        """
+        Update account details of a user based on user_id.
+        Only `first_name`, `last_name`, and `email` are allowed to be updated.
+        """
+        user_id = request.data.get('user_id')
+        if not user_id:
+            return Response({"error": "User ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.active_users.get(id=user_id)
+
+            # Allow updates only to specific fields
+            allowed_fields = {"first_name", "last_name", "email"}
+            for field in allowed_fields:
+                if field in request.data:
+                    setattr(user, field, request.data[field])
+
+            user.save()
+            return Response({"message": "Account details updated successfully."}, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": "Failed to update account details.", "details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def delete(self, request):
+        print("inside delete")
+        user_id = request.query_params.get('user_id')
+        print(user_id)
+
+        if not user_id:
+            return Response({"error": "User ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+    
+        try:
+            user = User.active_users.get(id=user_id)
+        
+            if user.is_deleted:
+                return Response({"error": "User is already deleted."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Mark the user as deleted
+            user.is_deleted = True
+            user.save()
+
+        # Add the user's details to the DeletedUser table
+            DeletedUser.objects.create(
+                user_id=user.id,
+                email=user.email,
+                username=user.username,
+                first_name=user.first_name,
+                last_name=user.last_name
+            )
+
+        # Return a success response
+            return Response({"message": f"User with ID {user_id} successfully deleted."}, status=status.HTTP_200_OK)
+
+        except User.DoesNotExist:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+    
+        except Exception as e:
+            print(f"Error: {e}")
+            return Response({"error": "Failed to delete account."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

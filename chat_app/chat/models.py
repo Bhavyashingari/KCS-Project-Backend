@@ -17,11 +17,12 @@ class Room(models.Model):
 class Message(models.Model):
     room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='messages')
     message_id = models.CharField(max_length=75, unique=True, blank=True, db_index=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="messages")
     content = models.TextField()
     timestamp = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f'Message in {self.room.name} at {self.timestamp}'
+        return f'Message in {self.room.room_name} at {self.timestamp}'
 
     def save(self, *args, **kwargs):
         # Generate message_id if not already set
@@ -49,14 +50,33 @@ class UserManager(UserManager):
         user.save(using=self._db)
         return user
 
+
+class ActiveUserManager(models.Manager):
+    def get_queryset(self):
+        return super().get_queryset().filter(is_deleted=False)
+    
 class User(AbstractUser):
     email = models.EmailField(unique=True)
     created_date = models.DateTimeField(auto_now_add=True)  # Automatically set when a user is created
     updated_date = models.DateTimeField(auto_now=True)  # Automatically updated when a user is modified
+    is_deleted = models.BooleanField(default=False)
 
     REQUIRED_FIELDS = ['first_name', 'last_name']
     USERNAME_FIELD = 'email' 
     objects = UserManager()
+    active_users = ActiveUserManager()
 
     def __str__(self):
         return self.email
+
+
+class DeletedUser(models.Model):
+    user_id = models.IntegerField()
+    email = models.EmailField()
+    username = models.CharField(max_length=150, blank=True, null=True)
+    first_name = models.CharField(max_length=30, blank=True, null=True)
+    last_name = models.CharField(max_length=30, blank=True, null=True)
+    deleted_date = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Deleted User: {self.email}"
