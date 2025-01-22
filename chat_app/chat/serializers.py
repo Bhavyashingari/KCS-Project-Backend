@@ -9,7 +9,7 @@ User = get_user_model()
 class RoomSerializer(serializers.ModelSerializer):
     admin_user = serializers.CharField()  # Accept username as a string
     room_id = serializers.ReadOnlyField()
-
+    print("inside room serial")
     class Meta:
         model = Room
         fields = ['room_id', 'room_name', 'admin_user', 'is_broadcast', 'created_at', 'updated_at']
@@ -18,6 +18,7 @@ class RoomSerializer(serializers.ModelSerializer):
         # Fetch the user by the username
         try:
             user = User.objects.get(username=value)  # Fetch user by username
+            print(user)
         except User.DoesNotExist:
             raise serializers.ValidationError("User with the given username does not exist.")
         
@@ -49,7 +50,7 @@ class RoomNameSerializer(serializers.ModelSerializer):
 
 class AddUserToRoomSerializer(serializers.Serializer):
     room_id = serializers.CharField()
-    username = serializers.CharField()
+    user_ids = serializers.ListField(child=serializers.IntegerField())
 
     def validate(self, data):
         # Check if the room exists
@@ -58,31 +59,34 @@ class AddUserToRoomSerializer(serializers.Serializer):
         except Room.DoesNotExist:
             raise serializers.ValidationError("Room not found.")
 
-        # Check if the user exists
-        try:
-            data['user'] = User.objects.get(username=data['username'])
-        except User.DoesNotExist:
-            raise serializers.ValidationError("User not found.")
+        # Check if all users exist
+        users = User.objects.filter(id__in=data['user_ids'])
+        if not users or len(users) != len(data['user_ids']):
+            raise serializers.ValidationError("One or more users not found.")
+        data['users'] = users
 
         return data
 
     def save(self, **kwargs):
         room = self.validated_data['room']
-        user = self.validated_data['user']
+        users = self.validated_data['users']
 
-        # Add the user to the room
-        room.users.add(user)
+        # Add the users to the room
+        room.users.add(*users)
         return room
 
 
 class MessageSerializer(serializers.ModelSerializer):
+    first_name = serializers.CharField(source='user.first_name', read_only=True)
+    last_name = serializers.CharField(source='user.last_name', read_only=True)
     class Meta:
         model = Message
-        fields = ['message_id', 'content', 'timestamp', 'room']  # Include fields as needed
+        fields = ['message_id', 'content', 'timestamp', 'room','first_name', 'last_name']  # Include fields as needed
+
 
 class AddMessageSerializer(serializers.ModelSerializer):
     room_id = serializers.CharField(write_only=True)
-    user_id = serializers.CharField(write_only=True)
+    user_id = serializers.IntegerField(write_only=True)  # Use IntegerField for the user ID
 
     class Meta:
         model = Message
@@ -94,10 +98,19 @@ class AddMessageSerializer(serializers.ModelSerializer):
 
         # Fetch room based on room_id
         from .models import Room  # Avoiding circular imports
-        room = Room.objects.get(room_id=room_id)
+        try:
+            room = Room.objects.get(room_id=room_id)
+        except Room.DoesNotExist:
+            raise serializers.ValidationError({"room_id": "Room not found."})
 
-        # Save the message with the associated room
-        message = Message.objects.create(room=room, **validated_data)
+        # Fetch user based on their ID
+        try:
+            user = User.objects.get(id=user_id)  # Use `id` instead of `user_id`
+        except User.DoesNotExist:
+            raise serializers.ValidationError({"user_id": "User not found."})
+
+        # Create and return the message
+        message = Message.objects.create(room=room, user=user, **validated_data)
         return message
 
 class SignupSerializer(serializers.ModelSerializer):

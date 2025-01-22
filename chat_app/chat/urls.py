@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import AddMessageToRoomView, AddUserToRoomView, RoomCreateView, MessageListView, SignupView, LoginView, UserListView, UserRoomListView
+from .views import AccountView, AddMessageToRoomView, AddUserToRoomView, RoomCreateView, MessageListView, SignupView, LoginView, UserListView, UserRoomListView
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
@@ -18,4 +18,6 @@ urlpatterns = [
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/user/rooms/', UserRoomListView.as_view(), name="user_rooms"),
     path('api/add-message/', AddMessageToRoomView.as_view(), name='add-message'),
+    path('api/account/', AccountView.as_view(), name='account'),
+    path("api/rooms/add-users/", AddUserToRoomView.as_view(), name='add-user')
 ]
